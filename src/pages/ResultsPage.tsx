@@ -3,10 +3,13 @@ import { useQuizStore } from '../store/quizStore';
 import { PersonalityResults } from '../components/PersonalityResults';
 import { ProfileDetails } from '../components/ProfileDetails';
 import { RotateCcw, Share, Download } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import { generatePDF } from '../utils/pdfGenerator';
 
 export const ResultsPage: React.FC = () => {
   const { result, profile, resetQuiz } = useQuizStore();
+  const pdfRef = React.useRef<HTMLDivElement>(null);
 
   if (!result || !profile) {
     return (
@@ -28,26 +31,59 @@ export const ResultsPage: React.FC = () => {
   };
 
   const handleShare = async () => {
-    if (navigator.share) {
-      try {
+    try {
+      // 1) Générer un PDF du contenu des résultats
+      const node = pdfRef.current;
+      if (!node) return;
+
+      const canvas = await html2canvas(node, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/png');
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let position = 0;
+
+      if (imgHeight <= pageHeight) {
+        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      } else {
+        // Multi-page si nécessaire
+        let remainingHeight = imgHeight;
+        let y = 0;
+        while (remainingHeight > 0) {
+          pdf.addImage(imgData, 'PNG', 0, y, imgWidth, imgHeight);
+          remainingHeight -= pageHeight;
+          if (remainingHeight > 0) {
+            pdf.addPage();
+            y -= pageHeight; // décale l'image vers le haut pour simuler le scroll
+          }
+        }
+      }
+
+      const blob = pdf.output('blob');
+      const file = new File([blob], 'bigfive-results.pdf', { type: 'application/pdf' });
+
+      // 2) Tenter Web Share API avec fichiers (mobile compatible WhatsApp/Apps)
+      const canShareFiles = (navigator as any).canShare && (navigator as any).canShare({ files: [file] });
+      if (canShareFiles && navigator.share) {
         await navigator.share({
-          title: 'Mon profil de personnalité Big Five',
-          text: 'Découvrez mon profil de personnalité basé sur le test Big Five',
-          url: window.location.href,
+          files: [file],
+          title: 'Mes résultats Big Five',
+          text: 'Je partage mes résultats au test Big Five.'
         });
-      } catch (error) {
-        console.log('Partage annulé ou échoué');
+        return;
       }
-    } else {
-      // Fallback: copy to clipboard
-      try {
-        await navigator.clipboard.writeText(
-          `Mon profil de personnalité Big Five: ${JSON.stringify(result, null, 2)}`
-        );
-        alert('Résultats copiés dans le presse-papiers !');
-      } catch (error) {
-        console.log('Impossible de copier');
-      }
+
+      // 3) Fallback: télécharger le PDF, puis ouvrir WhatsApp avec un message
+      pdf.save('bigfive-results.pdf');
+      const msg = 'Je viens de terminer le test Big Five. Je te partage mon PDF (téléchargé sur mon appareil).';
+      const waUrl = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      window.open(waUrl, '_blank');
+    } catch (e) {
+      console.error('Partage PDF échoué', e);
+      alert('Impossible de générer/partager le PDF. Vous pouvez réessayer ou télécharger vos résultats.');
     }
   };
 
@@ -67,6 +103,7 @@ export const ResultsPage: React.FC = () => {
 
   return (
     <div className="w-full h-full overflow-y-auto">
+
       {/* Header */}
       <div className="flex-none p-6 text-center">
         <div className="mb-4">
@@ -80,7 +117,7 @@ export const ResultsPage: React.FC = () => {
       </div>
 
       {/* Results Content */}
-      <div className="flex-1 px-6 pb-6">
+      <div className="flex-1 px-6 pb-6" ref={pdfRef}>
         <div className="space-y-6">
           {/* Personality Results */}
           <PersonalityResults result={result} />
