@@ -3,6 +3,7 @@ import { useQuizStore } from '../store/quizStore';
 import { PersonalityResults } from '../components/PersonalityResults';
 import { ProfileDetails } from '../components/ProfileDetails';
 import { RotateCcw, Share, Download } from 'lucide-react';
+import { generatePDF } from '../utils/pdfGenerator';
 
 export const ResultsPage: React.FC = () => {
   const { result, profile, resetQuiz } = useQuizStore();
@@ -51,17 +52,17 @@ export const ResultsPage: React.FC = () => {
   };
 
   const handleDownload = () => {
-    const dataStr = JSON.stringify(profile, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
+    if (!result || !profile) return;
 
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `big-five-personality-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    try {
+      generatePDF({
+        profile,
+        result
+      });
+    } catch (error) {
+      console.error('Erreur lors de la génération du PDF:', error);
+      alert('Une erreur est survenue lors de la génération du PDF. Veuillez réessayer.');
+    }
   };
 
   return (
